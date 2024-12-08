@@ -18,6 +18,7 @@
 #include <signal.h>
 #include <time.h>
 #include <thread>
+#include <locale.h>
 
 #if defined(HAVE_LIBSSL) && defined(HAVE_PTHREAD) && \
     (!defined(OPENSSL_VERSION_NUMBER) || OPENSSL_VERSION_NUMBER < 0x10100004)
@@ -292,6 +293,7 @@ static void seedPRNG() {
 }
 
 int main(int argc, char** argv) {
+    setlocale(LC_ALL, "C");
     CString sConfig;
     CString sDataDir = "";
 

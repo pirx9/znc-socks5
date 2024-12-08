@@ -137,6 +137,7 @@ CIRCNetwork::CIRCNetwork(CUser* pUser, const CString& sName)
       m_sBindHost(""),
       m_sEncoding(""),
       m_sQuitMsg(""),
+      m_sProxy(""),
       m_ssTrustedFingerprints(),
       m_pModules(new CModules),
       m_vClients(),
@@ -172,10 +173,10 @@ CIRCNetwork::CIRCNetwork(CUser* pUser, const CString& sName)
     m_NoticeBuffer.SetLineCount(250, true);
 
     m_pPingTimer = new CIRCNetworkPingTimer(this);
-    CZNC::Get().GetManager().AddCron(m_pPingTimer);
-
     m_pJoinTimer = new CIRCNetworkJoinTimer(this);
-    CZNC::Get().GetManager().AddCron(m_pJoinTimer);
+
+    if(m_sProxy.size() < 1)
+       RegisterCronTimers();
 
     SetIRCConnectEnabled(true);
 }
@@ -201,6 +202,7 @@ void CIRCNetwork::Clone(const CIRCNetwork& Network, bool bCloneName) {
     SetBindHost(Network.GetBindHost());
     SetEncoding(Network.GetEncoding());
     SetQuitMsg(Network.GetQuitMsg());
+    SetProxy(Network.GetProxy());
     m_ssTrustedFingerprints = Network.m_ssTrustedFingerprints;
 
     // Servers
@@ -384,6 +386,7 @@ bool CIRCNetwork::ParseConfig(CConfig* pConfig, CString& sError,
             {"bindhost", &CIRCNetwork::SetBindHost},
             {"encoding", &CIRCNetwork::SetEncoding},
             {"quitmsg", &CIRCNetwork::SetQuitMsg},
+            {"proxy", &CIRCNetwork::SetProxy}
         };
         TOption<bool> BoolOptions[] = {
             {"ircconnectenabled", &CIRCNetwork::SetIRCConnectEnabled},
@@ -598,6 +601,8 @@ CConfig CIRCNetwork::ToConfig() const {
     if (!m_sQuitMsg.empty()) {
         config.AddKeyValuePair("QuitMsg", m_sQuitMsg);
     }
+
+    config.AddKeyValuePair("Proxy", m_sProxy);
 
     // Modules
     const CModules& Mods = GetModules();
@@ -1046,6 +1051,11 @@ void CIRCNetwork::JoinChans(set<CChan*>& sChans) {
         PutIRC("JOIN " + sJoin);
 }
 
+void CIRCNetwork::RegisterCronTimers() {
+    CZNC::Get().GetManager().AddCron(m_pPingTimer);
+    CZNC::Get().GetManager().AddCron(m_pJoinTimer);
+}
+
 bool CIRCNetwork::JoinChan(CChan* pChan) {
     bool bReturn = false;
     NETWORKMODULECALL(OnJoining(*pChan), m_pUser, this, nullptr, &bReturn);
@@ -1329,6 +1339,7 @@ CString CIRCNetwork::GetCurNick() const {
 }
 
 bool CIRCNetwork::Connect() {
+    VCString proxyVec;
     if (!GetIRCConnectEnabled() || m_pIRCSock || !HasServers()) return false;
 
     CServer* pServer = GetNextServer();
@@ -1374,10 +1385,28 @@ bool CIRCNetwork::Connect() {
     }
 
     CString sSockName = "IRC::" + m_pUser->GetUsername() + "::" + m_sName;
-    CZNC::Get().GetManager().Connect(pServer->GetName(), pServer->GetPort(),
-                                     sSockName, 120, bSSL, GetBindHost(),
-                                     pIRCSock);
-
+    if(m_sProxy.size() > 0) {
+        m_sProxy.Split(":", proxyVec);
+        CZNC::Get().GetManager().Connect(
+            proxyVec[0],
+            proxyVec[1].ToUShort(),
+            sSockName,
+            120,
+            false,
+            GetBindHost(),
+            pIRCSock
+        );
+    } else {
+        CZNC::Get().GetManager().Connect(
+            pServer->GetName(),
+            pServer->GetPort(),
+            sSockName,
+            120,
+            bSSL,
+            GetBindHost(),
+            pIRCSock
+        );
+    }
     return true;
 }
 
@@ -1515,6 +1544,10 @@ CString CIRCNetwork::GetQuitMsg() const {
     return m_sQuitMsg;
 }
 
+CString CIRCNetwork::GetProxy() const {
+    return m_sProxy;
+}
+
 void CIRCNetwork::SetNick(const CString& s) {
     if (m_pUser->GetNick().Equals(s)) {
         m_sNick = "";
@@ -1568,6 +1601,18 @@ void CIRCNetwork::SetQuitMsg(const CString& s) {
     } else {
         m_sQuitMsg = s;
     }
+}
+
+void CIRCNetwork::SetProxy(const CString& s) {
+    VCString v;
+    uint16_t port = (0);
+    s.Split(":", v);
+    if((v.size() != 2) ||
+         ((port = v[1].ToUShort()) < 1)) {
+        m_sProxy = "";
+        return;
+    }
+    m_sProxy = s;
 }
 
 CString CIRCNetwork::ExpandString(const CString& sStr) const {

@@ -49,6 +49,13 @@ class CIRCSock : public CIRCSocket {
         NoArg = 3
     } EChanModeArgs;
 
+    enum {
+        PROXY_STATE_METHOD = 0,
+        PROXY_STATE_CONNECTING,
+        PROXY_STATE_CONNECTED
+    };
+
+    void ReadData(const char* data, size_t len) override;
     void ReadLine(const CString& sData) override;
     void Connected() override;
     void Disconnected() override;
@@ -238,6 +245,7 @@ class CIRCSock : public CIRCSocket {
     bool m_bFloodProtection;
     SCString m_ssSupportedTags;
     VCString m_vsSSLError;
+    uint32_t m_proxyState;
 
     friend class CIRCFloodTimer;
     friend class CCoreCaps;

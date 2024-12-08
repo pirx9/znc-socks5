@@ -727,6 +727,9 @@ class CAdminMod : public CModule {
             } else {
                 PutModule(t_s("Access denied!"));
             }
+        } else if(sVar.Equals("proxy")) {
+            pNetwork->SetProxy(sValue);
+            PutModule("Proxy = " + pNetwork->GetProxy());
         } else if (sVar.Equals("trustallcerts")) {
             bool b = sValue.ToBool();
             pNetwork->SetTrustAllCerts(b);

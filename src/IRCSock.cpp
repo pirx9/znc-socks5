@@ -88,8 +88,10 @@ CIRCSock::CIRCSock(CIRCNetwork* pNetwork)
       m_iSendsAllowed(pNetwork->GetFloodBurst()),
       m_uFloodBurst(pNetwork->GetFloodBurst()),
       m_fFloodRate(pNetwork->GetFloodRate()),
-      m_bFloodProtection(IsFloodProtected(pNetwork->GetFloodRate())) {
-    EnableReadLine();
+      m_bFloodProtection(IsFloodProtected(pNetwork->GetFloodRate())),
+      m_proxyState(PROXY_STATE_METHOD) {
+    if(pNetwork->GetProxy().size() < 1)
+        EnableReadLine();
     m_Nick.SetIdent(m_pNetwork->GetIdent());
     m_Nick.SetHost(m_pNetwork->GetBindHost());
     SetEncoding(m_pNetwork->GetEncoding());
@@ -151,6 +153,59 @@ void CIRCSock::Quit(const CString& sQuitMsg) {
         PutIRC("QUIT :" + m_pNetwork->ExpandString(m_pNetwork->GetQuitMsg()));
     }
     Close(CLT_AFTERWRITE);
+}
+
+void CIRCSock::ReadData(const char* data, size_t len) {
+    uint32_t addrLen = (0),
+             l = (0);
+    uint8_t buf[1024] = {0};
+    // already connected
+    if(HasReadLine())
+        return;
+    if(m_proxyState == PROXY_STATE_METHOD) {
+        if((len < 2) || (data[0] != 0x5) ||
+                (static_cast<uint8_t>(data[1]) == 0xff)) {
+            m_pNetwork->PutStatus(t_s("Proxy initial req failed"));
+            Close(CLT_NOW);
+            return;
+        }
+        addrLen = (m_pNetwork->GetCurrentServer()->GetName().size()&0xff);
+        buf[0] = 0x5;
+        buf[1] = 0x1;
+        buf[3] = 0x3;
+        buf[4] = addrLen;
+        memcpy(
+            &buf[5],
+            m_pNetwork->GetCurrentServer()->GetName().c_str(),
+            addrLen
+        );
+        *reinterpret_cast<uint16_t*>(&buf[(5+addrLen)]) = htons(
+                m_pNetwork->GetCurrentServer()->GetPort());
+        Write(reinterpret_cast<char*>(buf), (5+addrLen+2));
+        m_proxyState = PROXY_STATE_CONNECTING;
+    } else if(m_proxyState == PROXY_STATE_CONNECTING) {
+        if((len < (4+4+2)) || (data[1] != 0x0)) {
+            m_pNetwork->PutStatus(t_s("Proxy connection failure"));
+            Close(CLT_NOW);
+            return;
+        }
+        m_proxyState = PROXY_STATE_CONNECTED;
+        m_pNetwork->PutStatus(t_s("Proxy connection OK"));
+        // XXX: ugly hack, any \0s will lead to a problem
+        memset(const_cast<char*>(data), '\n', len);
+        EnableReadLine();
+        if(m_pNetwork->GetCurrentServer()->IsSSL()) {
+            SetSSL(true);
+            SetHostToVerifySSL(m_pNetwork->GetCurrentServer()->GetName());
+            if(!ConnectSSL()) {
+                // ????
+                Close(CLT_NOW);
+                return;
+            }
+        }
+        Connected();
+        m_pNetwork->RegisterCronTimers();
+    }
 }
 
 void CIRCSock::ReadLine(const CString& sData) {
@@ -1305,7 +1360,17 @@ void CIRCSock::SetNick(const CString& sNick) {
 }
 
 void CIRCSock::Connected() {
+    uint8_t buf[256];
     DEBUG(GetSockName() << " == Connected()");
+
+    if((m_pNetwork->GetProxy().size() > 0) &&
+            (m_proxyState == PROXY_STATE_METHOD)) {
+        buf[0] = 0x5;
+        buf[1] = 0x1;
+        buf[2] = 0x0;
+        Write(reinterpret_cast<char*>(buf), 3);
+        return;
+    }
 
     CString sPass = m_sPass;
     CString sNick = m_pNetwork->GetNick();

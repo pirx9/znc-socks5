@@ -240,6 +240,7 @@ class CIRCNetwork : private CCoreTranslationMixin {
     const CString& GetBindHost() const;
     const CString& GetEncoding() const;
     CString GetQuitMsg() const;
+    CString GetProxy() const;
 
     void SetNick(const CString& s);
     void SetAltNick(const CString& s);
@@ -248,6 +249,7 @@ class CIRCNetwork : private CCoreTranslationMixin {
     void SetBindHost(const CString& s);
     void SetEncoding(const CString& s);
     void SetQuitMsg(const CString& s);
+    void SetProxy(const CString& s);
 
     double GetFloodRate() const { return m_fFloodRate; }
     unsigned short int GetFloodBurst() const { return m_uFloodBurst; }
@@ -275,6 +277,8 @@ class CIRCNetwork : private CCoreTranslationMixin {
     void AddBytesRead(unsigned long long u) { m_uBytesRead += u; }
     void AddBytesWritten(unsigned long long u) { m_uBytesWritten += u; }
 
+    void RegisterCronTimers();
+
     CString ExpandString(const CString& sStr) const;
     CString& ExpandString(const CString& sStr, CString& sRet) const;
 
@@ -294,6 +298,7 @@ class CIRCNetwork : private CCoreTranslationMixin {
     CString m_sBindHost;
     CString m_sEncoding;
     CString m_sQuitMsg;
+    CString m_sProxy;
     SCString m_ssTrustedFingerprints;
 
     CModules* m_pModules;
